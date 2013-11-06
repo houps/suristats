@@ -1,0 +1,2 @@
+This software uses Suricata stats.log file to build a SQLite database to store counters for each run.
+Type "suristats -h" for help and usage.
