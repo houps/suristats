@@ -19,7 +19,9 @@
 #define SQL_INSERT_RUN     "INSERT INTO T_RUN VALUES ('%d', datetime('%s', '-%d seconds'), datetime('%s'), %d, '%s')"
 
 #define SQL_UPDATE_RUN  "UPDATE T_RUN SET R_ENDDATE = datetime(R_ENDDATE, '+%d seconds'), R_UPTIME = %d WHERE R_ID = %d"
-
+/*
+SELECT COUNT(C_THREAD) FROM T_COUNTER, T_RUN WHERE C_RUN = '0' AND C_UPTIME = R_DURATION AND C_NAME = 'capture.kernel_packets'; 
+*/
 
 static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
     int i;
