@@ -85,20 +85,21 @@ int ParseLogFile(char * filename, struct counterList * clist, struct runList * r
 int main(int argc, char**argv)
 {
     //int ret;
-    char opt, operation;
+    char opt;
     char *dbFilename;
     char *logFilename;
 
-    while ((opt = getopt(argc, argv, "hd:c:D:v:s:")) != -1) {
+    while ((opt = getopt(argc, argv, "hd:c:D:v:s:m:")) != -1) {
         switch (opt) {
             case 'h':
                 printf("Usage:\n");
-                printf("\t-h to display this help.\n");
-                printf("\t-d <dbfile> <statfile>\n\t\tto create dbfile and fill it with the content statfile, a SURICATA stats log file.\n");
-                printf("\t-c <dbfile>\n\t\tto create an empty dbfile.\n");
-                printf("\t-D <dbfile>\n\t\tto delete the file dbfile.\n");
-                printf("\t-v <dbfile>\n\t\tto get the information about data in dbfile.\n");
-                printf("\t-s <dbfile>\n\t\tto get statistics about counters in dbfile.\n");
+                printf("-h\n\tto display this help.\n");
+                printf("-d <dbfile> <statfile>\n\tto create dbfile and fill it with the content statfile, a SURICATA stats log file.\n");
+                printf("-c <dbfile>\n\tto create an empty dbfile.\n");
+                printf("-D <dbfile>\n\tto delete the file dbfile.\n");
+                printf("-v <dbfile>\n\tto get the information about data in database file.\n");
+                printf("-s <dbfile>\n\tto get statistics about counters in database file.\n");
+                printf("-m <dbfile> <statfile>\n\tto monitor the modifications of <statfile>, a SURICATA stats log file,\n\tand to populate the database <dbfile>.\n");
                 break;
             case 'd':
                 /* optarg contains the database filename */
@@ -140,13 +141,50 @@ int main(int argc, char**argv)
                 break;
             case 'v':
                 /* optarg contains the database filename */
-                dbFilename = strdup(optarg);
-                operation = opt;
+                {
+                    struct counterList * clist;
+                    struct runList * rlist;
+
+                    dbFilename = strdup(optarg);
+                    /* create counter and run lists */
+                    clist = counterListCreate();
+                    rlist = runListCreate();
+                    /* DB reading */
+                    dbRead(dbFilename, clist, rlist);
+                    /* delete list */
+                    counterListDelete(clist);
+                    runListDelete(rlist);
+                    free(dbFilename);
+                    free(logFilename);
+                }
                 break;
             case 's':
                 /* optarg contains the database filename */
+                {
+                    struct counterList * clist;
+                    struct runList * rlist;
+                    dbFilename = strdup(optarg);
+                    /* create counter and run lists */
+                    clist = counterListCreate();
+                    rlist = runListCreate();
+                    /* DB reading */
+                    dbRead(dbFilename, clist, rlist);
+                    /* delete list */
+                    counterListDelete(clist);
+                    runListDelete(rlist);
+                    free(dbFilename);
+                    free(logFilename);
+                }
+                break;
+            case 'm':
+                /* optarg contains the database filename */
                 dbFilename = strdup(optarg);
-                operation = opt;
+                if (argc == 4) {
+                    logFilename = strdup(argv[3]);
+                    /* ... */
+                    free(dbFilename);
+                    free(logFilename);
+                }
                 break;
             default:
                 break;

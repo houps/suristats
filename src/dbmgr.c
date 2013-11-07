@@ -1,5 +1,8 @@
 #include <stdio.h>
+#include <stdlib.h> /* exit() */
+#include <unistd.h> /* access() */
 #include <sqlite3.h>
+#include <assert.h>
 
 #include "dbmgr.h"
 #include "counter.h"
@@ -15,7 +18,7 @@
 
 #define SQL_INSERT_RUN     "INSERT INTO T_RUN VALUES ('%d', datetime('%s', '-%d seconds'), datetime('%s'), %d, '%s')"
 
-#define SQL_UPDATE_RUN  "UPDATE T_RUN SET R_ENDDATE = datetime(R_ENDDATE, '+%d seconds'), R_UPTIME = %d WHERE R_ID = %d"
+//#define SQL_UPDATE_RUN  "UPDATE T_RUN SET R_ENDDATE = datetime(R_ENDDATE, '+%d seconds'), R_UPTIME = %d WHERE R_ID = %d"
 
 
 static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
@@ -30,6 +33,28 @@ static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
     return 0;
 }
 
+static int callback_runs(void *list, int argc, char **argv, char **azColName) {
+    struct runList * rlist = (struct runList *)list;
+    struct run * run;
+    
+    UNUSED_PARAMETER(argc);
+    UNUSED_PARAMETER(azColName);
+
+    run = runCreate(atoi(argv[0]), argv[1], atoi(argv[3]));
+    runListAppend(rlist, run);
+    return 0;
+}
+
+static int callback_counters(void *param, int argc, char **argv, char **azColName) {
+    int * value_p = (int *)param;
+    
+    UNUSED_PARAMETER(argc);
+    UNUSED_PARAMETER(azColName);
+
+    *value_p = atoi(argv[0]);
+    return 0;
+}
+
 int dbCreate(char * filename, struct counterList * clist, struct runList * rlist)
 {
     sqlite3 *db;
@@ -37,7 +62,10 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
     char *zErrMsg = 0;
 
     /* check that the db does not exist */
-    //printf("%s, %16lx\n", filename, (long unsigned int)list);
+    if (!access(filename, R_OK)) {
+        perror("File already exists\n");
+        exit(EXIT_FAILURE);
+    }
     /* create it */
     ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
     if (ret) {
@@ -72,7 +100,7 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
             char request[256];
             struct counter * c;
 
-            c = counterListGetFirst(clist);
+            c = counterListPopFirst(clist);
             snprintf(request, 256, SQL_INSERT_COUNTER, c->name, c->thread_name, c->value, c->run_id, c->uptime);
             counterDelete(c);
             ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
@@ -96,11 +124,9 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
             char request[256];
             struct run * r;
 
-            r = runListGetFirst(rlist);
+            r = runListPopFirst(rlist);
             snprintf(request, 256, SQL_INSERT_RUN, r->id, r->startTime, r->uptime, r->startTime, r->uptime, "");
-//#define SQL_INSERT_RUN     "INSERT INTO T_RUN VALUES ('%d', datetime('%s', '-%d seconds'), datetime('%s'), %d, '%s')"
-            printf("%s\n", request);
-	    runDelete(r);
+            runDelete(r);
             ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
             if (ret != SQLITE_OK) {
                 fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -113,62 +139,49 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
     return 0;
 }
 
-int dbCreate2(char * filename, struct counterList * list)
+int dbRead(char * filename, struct counterList * clist, struct runList * rlist)
 {
     sqlite3 *db;
-    int ret;
+    int ret, i;
     char *zErrMsg = 0;
+    struct run * r;
 
-    /* check that the db does not exist */
-    //printf("%s, %16lx\n", filename, (long unsigned int)list);
-    /* create it */
-    ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
-    if(ret){
+    assert(clist != NULL);
+    assert(rlist != NULL);
+    
+    /* open it */
+    ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
+    if (ret) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
         return(1);
     }
-    /* 1 - create runs table */
-    ret = sqlite3_exec(db, SQL_CREATE_TABLE_COUNTERS, callback, 0, &zErrMsg);
-    if( ret!=SQLITE_OK ){
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-    /* 2 - create counters table */
-    ret = sqlite3_exec(db, SQL_CREATE_TABLE_RUNS, callback, 0, &zErrMsg);
-    if( ret!=SQLITE_OK ){
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-    /* fill the db if list provided */
-    if (list != NULL) {
-        int i, max;
+    /* extract runs info from the db */
 
-        ret = sqlite3_exec(db, "BEGIN", callback, 0, &zErrMsg);
+#define SQL_RUN_LIST "SELECT * FROM T_RUN"
+
+    ret = sqlite3_exec(db, SQL_RUN_LIST, callback_runs, rlist, &zErrMsg);
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
+    printf("Number of run(s): %d\n", rlist->count);
+ 
+    /* extract counters info from the db */
+     for (i = 0, r = runListGetFirst(rlist); i < rlist->count; i++, r = runListGetNext(r)) {
+        char request[256];
+        int number;
+        
+#define SQL_SELECT_COUNT_PER_RUN "SELECT COUNT(*) FROM T_COUNTER WHERE C_RUN = %d"
+
+        snprintf(request, 256, SQL_SELECT_COUNT_PER_RUN, i);
+        ret = sqlite3_exec(db, request, callback_counters, &number, &zErrMsg);
         if (ret != SQLITE_OK) {
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
-
-        max = list->count;
-        for (i = 0; i < max; i++) {
-            char request[256];
-            struct counter * c;
-
-            c = counterListGetFirst(list);
-            snprintf(request, 256, SQL_INSERT_COUNTER, c->name, c->thread_name, c->value, c->run_id, c->uptime);
-            counterDelete(c);
-            ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
-            if( ret!=SQLITE_OK ){
-                fprintf(stderr, "SQL error: %s\n", zErrMsg);
-                sqlite3_free(zErrMsg);
-            }
-        }
-        ret = sqlite3_exec(db, "COMMIT", callback, 0, &zErrMsg);
-        if (ret != SQLITE_OK) {
-            fprintf(stderr, "SQL error: %s\n", zErrMsg);
-            sqlite3_free(zErrMsg);
-        }
+        printf("run: %d | start: %s | uptime: %d seconds | %d counters.\n",
+               r->id, r->startTime, r->uptime, number);
     }
     /* close the db file */
     sqlite3_close(db);

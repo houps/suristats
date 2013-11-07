@@ -64,7 +64,7 @@ struct counterList * counterListCreate(void)
 int counterListDelete(struct counterList *l)
 {
     while (l->count != 0) {
-        struct counter * c = counterListGetFirst(l);
+        struct counter * c = counterListPopFirst(l);
         counterDelete(c);
     }
     free(l);
@@ -93,7 +93,7 @@ int counterListAppend(struct counterList *l, struct counter *f)
     return ret;
 }
 
-struct counter * counterListGetFirst(struct counterList * l)
+struct counter * counterListPopFirst(struct counterList * l)
 {
     struct counter *c = NULL;
 
@@ -107,6 +107,16 @@ struct counter * counterListGetFirst(struct counterList * l)
         }
     }
     return c;
+}
+
+struct counter * counterListGetFirst(struct counterList * l)
+{
+    return l->head;
+}
+
+struct counter * counterListGetNext(struct counter * c)
+{
+    return c->next;
 }
 
 void counterListDisplay(struct counterList * l)

@@ -33,7 +33,11 @@
 
     int runListAppend(struct runList *l, struct run *c);
 
+    struct run *runListPopFirst(struct runList *l);
+    
     struct run *runListGetFirst(struct runList *l);
+
+    struct run *runListGetNext(struct run * r);
     
     void runListDisplay(struct runList *l);
 

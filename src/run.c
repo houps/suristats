@@ -28,7 +28,7 @@ struct run *runCreate(int id, char *start, unsigned int uptime)
     r->startTime = strdup(start);
     r->uptime = uptime;
     TRACE("%s - id=%d date=%s uptime=%d\n", __FUNCTION__, r->id, r->start, r->uptime);
-    runDisplay(r);
+    //runDisplay(r);
     return r;
 }
 
@@ -68,7 +68,7 @@ struct runList * runListCreate(void)
 int runListDelete(struct runList *l)
 {
     while (l->count != 0) {
-        struct run * r = runListGetFirst(l);
+        struct run * r = runListPopFirst(l);
         runDelete(r);
     }
     free(l);
@@ -97,7 +97,7 @@ int runListAppend(struct runList *l, struct run *r)
     return ret;
 }
 
-struct run *runListGetFirst(struct runList * l)
+struct run *runListPopFirst(struct runList * l)
 {
     struct run *r = NULL;
 
@@ -113,6 +113,16 @@ struct run *runListGetFirst(struct runList * l)
     return r;
 }
 
+struct run *runListGetFirst(struct runList * l)
+{
+    return l->head;
+}
+
+struct run *runListGetNext(struct run * r)
+{
+    return r->next;
+}
+
 void runListDisplay(struct runList * l)
 {
     int i;
@@ -126,7 +136,6 @@ void runListDisplay(struct runList * l)
         current = current->next;
     }
     printf("%d run(s) in the list.\n", l->count);
-    //assert(current == l->tail);
 }
 
 #ifdef TEST_UNIT

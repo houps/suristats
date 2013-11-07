@@ -33,7 +33,11 @@
 
     int counterListAppend(struct counterList *l, struct counter *c);
 
+    struct counter * counterListPopFirst(struct counterList * l);
+
     struct counter * counterListGetFirst(struct counterList * l);
+
+    struct counter * counterListGetNext(struct counter * c);
     
     void counterListDisplay(struct counterList * l);
 

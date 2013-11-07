@@ -8,7 +8,7 @@
 
     int       dbCreate(char * filename, struct counterList * clist, struct runList * rlist);
 
-    int       dbRead(sqlite3 * db, struct counterList * clist, struct runList * rlist);
+    int       dbRead(char * filename, struct counterList * clist, struct runList * rlist);
 
     sqlite3 * dbOpen(char * filename);
     
