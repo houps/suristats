@@ -94,11 +94,11 @@ int main(int argc, char**argv)
             case 'h':
                 printf("Usage:\n");
                 printf("-h\n\tto display this help.\n");
-                printf("-d <dbfile> <statfile>\n\tto create dbfile and fill it with the content statfile, a SURICATA stats log file.\n");
+                printf("-d <dbfile> <statfile>\n\tto fill dbfile with the content statfile, a SURICATA stats log file.\n");
                 printf("-c <dbfile>\n\tto create an empty dbfile.\n");
                 printf("-D <dbfile>\n\tto delete the file dbfile.\n");
-                printf("-v <dbfile>\n\tto get the information about data in database file.\n");
-                printf("-s <dbfile>\n\tto get statistics about counters in database file.\n");
+                printf("-v <dbfile>\n\tto get the information about data in database dbfile.\n");
+                printf("-s <dbfile>\n\tto get statistics about counters in database dbfile.\n");
                 printf("-m <dbfile> <statfile>\n\tto monitor the modifications of <statfile>, a SURICATA stats log file,\n\tand to populate the database <dbfile>.\n");
                 break;
             case 'd':
@@ -168,7 +168,7 @@ int main(int argc, char**argv)
                     clist = counterListCreate();
                     rlist = runListCreate();
                     /* DB reading */
-                    dbRead(dbFilename, clist, rlist);
+                    dbStatPrint(dbFilename, clist, rlist);
                     /* delete list */
                     counterListDelete(clist);
                     runListDelete(rlist);

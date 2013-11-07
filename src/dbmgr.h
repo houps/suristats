@@ -10,6 +10,8 @@
 
     int       dbRead(char * filename, struct counterList * clist, struct runList * rlist);
 
+    int       dbStatPrint(char * filename);
+
     sqlite3 * dbOpen(char * filename);
     
     void      dbRunInsert(sqlite3 * db, int run, char * startDate, int uptime);

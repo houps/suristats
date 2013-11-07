@@ -1,5 +1,5 @@
 suristats.exe: main.o counter.o dbmgr.o run.o
-	gcc main.o counter.o dbmgr.o run.o -Wall -o main.exe  -l sqlite3
+	gcc main.o counter.o dbmgr.o run.o -Wall -o suristats.exe -l sqlite3
 
 main.o: main.c
 	gcc main.c -Wall -Wextra -c -o main.o
