@@ -1,16 +1,21 @@
 #ifndef __DBMGR_H__
 
-#   include <stdio.h>
 #   include <sqlite3.h>
 
 #   include "counter.h"
+#   include "run.h"
 
-    int dbCreate(char * filename, struct counterList * list);
 
-    int dbDelete(char * filename);
+    int       dbCreate(char * filename, struct counterList * clist, struct runList * rlist);
 
-    int dbCreate2(char * filename, struct counterList * list);
+    int       dbRead(sqlite3 * db, struct counterList * clist, struct runList * rlist);
 
-    int dbCreate3(char * filename, struct counterList * list);
+    sqlite3 * dbOpen(char * filename);
+    
+    void      dbRunInsert(sqlite3 * db, int run, char * startDate, int uptime);
+
+    void      dbRunUpdate(sqlite3 * db, int run, int uptime);
+
+    void      dbClose(sqlite3 * db);
 
 #endif

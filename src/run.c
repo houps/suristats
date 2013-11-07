@@ -25,9 +25,10 @@ struct run *runCreate(int id, char *start, unsigned int uptime)
     }
     r->next = NULL;
     r->id = id;
-    r->start = strdup(start);
+    r->startTime = strdup(start);
     r->uptime = uptime;
     TRACE("%s - id=%d date=%s uptime=%d\n", __FUNCTION__, r->id, r->start, r->uptime);
+    runDisplay(r);
     return r;
 }
 
@@ -35,13 +36,14 @@ void runUpdate(struct run *r, unsigned int uptime)
 {
     assert(r != NULL);
     r->uptime = uptime;
+    runDisplay(r);
 }
 
 int runDelete(struct run *r)
 {
     assert(r->next == NULL);
     TRACE("%s - @=%16lx\n", __FUNCTION__, (long int)r);
-    free(r->start);
+    free(r->startTime);
     free(r);
     return 0;
 }
@@ -49,7 +51,7 @@ int runDelete(struct run *r)
 void runDisplay(struct run * r)
 {
     assert(r);
-    //printf("name=%s thread=%s value=%ld run=%d up=%d\n", c->name, c->thread_name, c->value, c->run_id, c->up);
+    printf("id=%d start=%s uptime=%d\n", r->id, r->startTime, r->uptime);
 }
 
 struct runList * runListCreate(void)

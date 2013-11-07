@@ -7,7 +7,7 @@
     struct run {
         struct run   *next;
         int           id;
-        char          startTime[32];
+        char         *startTime;
         unsigned int  uptime;
     };
 
@@ -33,7 +33,7 @@
 
     int runListAppend(struct runList *l, struct run *c);
 
-    struct run *runListGetFirst(struct run *l);
+    struct run *runListGetFirst(struct runList *l);
     
     void runListDisplay(struct runList *l);
 
