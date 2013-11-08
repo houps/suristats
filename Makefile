@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-W -Wall -Wextra
 LDFLAGS=-l sqlite3
-EXEC=suristats
+TARGET=suristats
 SRCDIR=src
 OBJDIR=obj
 BINDIR=bin
@@ -9,9 +9,9 @@ SOURCES  := $(wildcard $(SRCDIR)/*.c)
 INCLUDES := $(wildcard $(SRCDIR)/*.h)
 OBJECTS  := $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
-all: $(EXEC)
+#all: $(TARGET)
 
-suristats: $(OBJECTS)
+$(BINDIR)/$(TARGET): $(OBJECTS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS): $(OBJDIR)/%.o : $(SRCDIR)/%.c
@@ -25,7 +25,7 @@ dbmgr.o: $(INC)/counter.h $(INC)/run.h $(INC)/thread.h
 .PHONY: clean mrproper
 
 clean:
-	rm -rf *.o
+	rm -rf $(OBJECTS)
 
 mrproper: clean
-	rm -rf $(EXEC)
+	rm -rf $(TARGET)
