@@ -142,38 +142,19 @@ int main(int argc, char**argv)
             case 'v':
                 /* optarg contains the database filename */
                 {
-                    struct counterList * clist;
-                    struct runList * rlist;
-
                     dbFilename = strdup(optarg);
-                    /* create counter and run lists */
-                    clist = counterListCreate();
-                    rlist = runListCreate();
                     /* DB reading */
-                    dbRead(dbFilename, clist, rlist);
-                    /* delete list */
-                    counterListDelete(clist);
-                    runListDelete(rlist);
+                    dbRead(dbFilename);
                     free(dbFilename);
-                    free(logFilename);
                 }
                 break;
             case 's':
                 /* optarg contains the database filename */
                 {
-                    struct counterList * clist;
-                    struct runList * rlist;
                     dbFilename = strdup(optarg);
-                    /* create counter and run lists */
-                    clist = counterListCreate();
-                    rlist = runListCreate();
-                    /* DB reading */
-                    dbStatPrint(dbFilename, clist, rlist);
-                    /* delete list */
-                    counterListDelete(clist);
-                    runListDelete(rlist);
+                    /* DB processing for statistics extraction */
+                    dbStatPrint(dbFilename);
                     free(dbFilename);
-                    free(logFilename);
                 }
                 break;
             case 'm':

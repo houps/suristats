@@ -1,33 +1,54 @@
 #include <stdio.h>
 #include <stdlib.h> /* exit() */
 #include <unistd.h> /* access() */
+#include <string.h> /* strcmp() */
 #include <sqlite3.h>
 #include <assert.h>
 
 #include "dbmgr.h"
 #include "counter.h"
+#include "thread.h"
 
+#define DEBUG        0
+
+/*****************/
+/* Useful Macros */
+/*****************/
 
 #define UNUSED_PARAMETER(_param_)   (void)(_param_)
+
+#ifdef DEBUG
+#   define DEBUG_TEST 1
+#else
+#   define DEBUG_TEST 0
+#endif
+
+#define debug_print(fmt, ...) \
+            do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
+
+/****************/
+/* SQL requests */
+/****************/
 
 #define SQL_CREATE_TABLE_COUNTERS  "CREATE TABLE T_COUNTER (C_NAME CHAR(32), C_THREAD VARCHAR(32), C_VALUE INTEGER, C_RUN INTEGER, C_UPTIME INTEGER)"
 
 #define SQL_CREATE_TABLE_RUNS      "CREATE TABLE T_RUN (R_ID INTEGER, R_STARTDATE DATETIME, R_ENDDATE DATETIME, R_DURATION INTEGER, R_COMMENT VARCHAR(32))"
 
-#define SQL_INSERT_COUNTER "INSERT INTO T_COUNTER VALUES ('%31s', '%31s', %ld, %d, %d)"
+#define SQL_INSERT_COUNTER "INSERT INTO T_COUNTER VALUES ('%s', '%s', %ld, %d, %d)"
 
 #define SQL_INSERT_RUN     "INSERT INTO T_RUN VALUES ('%d', datetime('%s', '-%d seconds'), datetime('%s'), %d, '%s')"
 
 #define SQL_UPDATE_RUN  "UPDATE T_RUN SET R_ENDDATE = datetime(R_ENDDATE, '+%d seconds'), R_UPTIME = %d WHERE R_ID = %d"
-/*
-SELECT COUNT(C_THREAD) FROM T_COUNTER, T_RUN WHERE C_RUN = '0' AND C_UPTIME = R_DURATION AND C_NAME = 'capture.kernel_packets'; 
-*/
+
+#define SQL_STATS_LIST_COUNTERS  "SELECT * FROM T_COUNTER WHERE C_RUN = %d AND C_NAME = '%s'"
+
+#define SQL_STATS_LIST_THREADS   "SELECT DISTINCT C_THREAD FROM T_COUNTER WHERE C_RUN = '%d' AND C_NAME='capture.kernel_packets'"
+
 
 static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
     int i;
     
     UNUSED_PARAMETER(NotUsed);
-    
     for (i = 0; i < argc; i++){
         printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
     }
@@ -41,7 +62,6 @@ static int callback_runs(void *list, int argc, char **argv, char **azColName) {
     
     UNUSED_PARAMETER(argc);
     UNUSED_PARAMETER(azColName);
-
     run = runCreate(atoi(argv[0]), argv[1], atoi(argv[3]));
     runListAppend(rlist, run);
     return 0;
@@ -52,7 +72,6 @@ static int callback_getCount(void *param, int argc, char **argv, char **azColNam
     
     UNUSED_PARAMETER(argc);
     UNUSED_PARAMETER(azColName);
-
     *value_p = atoi(argv[0]);
     return 0;
 }
@@ -63,10 +82,19 @@ static int callback_counters_list(void *param, int argc, char **argv, char **azC
 	
     UNUSED_PARAMETER(argc);
     UNUSED_PARAMETER(azColName);
-
     c = counterCreate(argv[0], argv[1], atol(argv[2]), atoi(argv[3]), atoi(argv[4]));
     counterListAppend(clist, c);
+    return 0;
+}
 
+static int callback_threads_list(void *param, int argc, char **argv, char **azColName) {
+    struct threadList * tlist = (struct threadList *)param;
+	struct thread * t;
+	
+    UNUSED_PARAMETER(argc);
+    UNUSED_PARAMETER(azColName);
+    t = threadCreate(argv[0]);
+    threadListAppend(tlist, t);
     return 0;
 }
 
@@ -154,34 +182,30 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
     return 0;
 }
 
-int dbGetRunNumber(sqlite3 *db)
+struct runList * dbGetRunList(sqlite3 *db)
 {
     char *zErrMsg = 0;
     int ret;
-    int number;
+    struct runList * rlist;
     
-    /* get run numbers from db */
+#define SQL_RUN_LIST  "SELECT * FROM T_RUN"
 
-#define SQL_RUN_LIST "SELECT COUNT(*) FROM T_RUN"
-
-    ret = sqlite3_exec(db, SQL_RUN_LIST, callback_getCount, &number, &zErrMsg);
+    rlist = runListCreate();
+    ret = sqlite3_exec(db, SQL_RUN_LIST, callback_runs, rlist, &zErrMsg);
     if (ret != SQLITE_OK) {
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
-    return number;
+    return rlist;
 }
 
-int dbRead(char * filename, struct counterList * clist, struct runList * rlist)
+int dbRead(char * filename)
 {
     sqlite3 *db;
-    int ret, i, runs;
+    int ret, run_id;
     char *zErrMsg = 0;
-    //struct runList * rlist;
+    struct runList * rlist;
     struct run * r;
-
-    assert(clist != NULL);
-    assert(rlist != NULL);
     
     /* open it */
     ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
@@ -190,26 +214,24 @@ int dbRead(char * filename, struct counterList * clist, struct runList * rlist)
         sqlite3_close(db);
         return(1);
     }
-    /* extract runs info from the db */
-#define SQL_RUN_LIST "SELECT * FROM T_RUN"
 
-    //rlist = runListCreate();
+    /* extract runs info from the db */
+    rlist = runListCreate();
     ret = sqlite3_exec(db, SQL_RUN_LIST, callback_runs, rlist, &zErrMsg);
     if (ret != SQLITE_OK) {
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
-    //runListDelete(rlist);
-	runs = rlist->count;
- 
+    printf("Number of run(s): %d\n", rlist->count);
+
     /* extract counters info from the db */
-    for (i = 0, r = runListGetFirst(rlist); i < rlist->count; i++, r = runListGetNext(r)) {
+    for (run_id = 0, r = runListGetFirst(rlist); run_id < rlist->count; run_id++, r = runListGetNext(r)) {
         char request[256];
         int number;
         
 #define SQL_SELECT_COUNT_PER_RUN "SELECT COUNT(*) FROM T_COUNTER WHERE C_RUN = %d"
 
-        snprintf(request, 256, SQL_SELECT_COUNT_PER_RUN, i);
+        snprintf(request, 256, SQL_SELECT_COUNT_PER_RUN, run_id);
         ret = sqlite3_exec(db, request, callback_getCount, &number, &zErrMsg);
         if (ret != SQLITE_OK) {
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -218,6 +240,7 @@ int dbRead(char * filename, struct counterList * clist, struct runList * rlist)
         printf("%d | start: %s | uptime: %d seconds | %d counters.\n",
                r->id, r->startTime, r->uptime, number);
     }
+    runListDelete(rlist);
     /* close the db file */
     sqlite3_close(db);
     return 0;
@@ -226,13 +249,10 @@ int dbRead(char * filename, struct counterList * clist, struct runList * rlist)
 int dbStatPrint(char * filename)
 {
     sqlite3 *db;
-    int ret, i, runs;
+    int ret, run_id;
     char *zErrMsg = 0;
+    struct runList * runsList;
     struct run * r;
-    struct runList * rlist;
-    struct counterList * clist;
-    
-    assert(clist != NULL);
     
     /* open db */
     ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
@@ -243,63 +263,95 @@ int dbStatPrint(char * filename)
     }
     
     /* get run numbers from db */
-	runs = dbGetRunNumber(db);
-    printf("Number of run(s): %d\n", runs);
-#if 0
-    /* get threads list from db */
+	runsList = dbGetRunList(db);
+    printf("Number of run(s): %d\n", runsList->count);
 
-#define SQL_THREAD_LIST "SELECT C_THREAD FROM T_COUNTER, T_RUN WHERE (C_RUN = %d, C_UPTIME = R_UPTIME, C_NAME = capture.kernel_packets)"
-
-    ret = sqlite3_exec(db, SQL_THREAD_LIST, callback_runs, rlist, &zErrMsg);
-    if (ret != SQLITE_OK) {
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-    printf("Number of run(s): %d\n", rlist->count);
-
-    /* extract required counters from the db for each run */
-    for (i = 0, r = runListGetFirst(rlist); i < rlist->count; i++, r = runListGetNext(r)) {
+    /* for each run extract packets and drops lists to compute stats */
+    for (run_id = 0, r = runListGetFirst(runsList); run_id < runsList->count; run_id++, r = runListGetNext(r)) {
         char request[256];
+        struct counterList * packetList;
+        struct counterList * dropList;
+        struct threadList  * threadsList;
+        struct counter * c;
+        struct thread * t;
+        int i;
         
-#define SQL_STATS_LIST_COUNTERS  "SELECT * FROM T_COUNTER WHERE (C_RUN = %d, C_THREAD = %s%d, C_NAME = %s)"
-
-        snprintf(request, 256, SQL_STATS_LIST_COUNTERS, i, "AFPacketeth3", i, "capture.kernel_packets");
-        ret = sqlite3_exec(db, request, callback_counters_list, clist, &zErrMsg);
+        /* get the list of threads that contains "capture.kernel_packets" counter */
+        threadsList = threadListCreate();
+        snprintf(request, 256, SQL_STATS_LIST_THREADS, run_id);
+        ret = sqlite3_exec(db, request, callback_threads_list, threadsList, &zErrMsg);
         if (ret != SQLITE_OK) {
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
-        printf("run: %d | start: %s | uptime: %d seconds | %d counters.\n",
-               r->id, r->startTime, r->uptime, number);
-    }
-
-//#define SQL_UPDATE_RUN  "UPDATE T_RUN SET R_ENDDATE = datetime(R_ENDDATE, '+%d seconds'), R_UPTIME = %d WHERE R_ID = %d"
-#define SQL_STATS_LIST_COUNTERS  "SELECT * FROM T_COUNTER WHERE (C_RUN = %d, C_THREAD = %s, C_NAME = %s)"
-//#define SQL_STATS_LIST_DROPS    "SELECT * FROM T_COUNTER"
-    snprintf(request, 256, SQL_SELECT_COUNT_PER_RUN, i);
-    ret = sqlite3_exec(db, SQL_RUN_LIST, callback_counters, clist, &zErrMsg);
-    if (ret != SQLITE_OK) {
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-    printf("Number of run(s): %d\n", rlist->count);
-    /* extract counters info from the db */
-     for (i = 0, r = runListGetFirst(rlist); i < rlist->count; i++, r = runListGetNext(r)) {
-        char request[256];
-        int number;
         
-#define SQL_SELECT_COUNT_PER_RUN "SELECT COUNT(*) FROM T_COUNTER WHERE C_RUN = %d"
-
-        snprintf(request, 256, SQL_SELECT_COUNT_PER_RUN, i);
-        ret = sqlite3_exec(db, request, callback_counters, &number, &zErrMsg);
+        /* get the list of ALL capture.kernel_packets counters */
+        packetList = counterListCreate();
+        snprintf(request, 256, SQL_STATS_LIST_COUNTERS, run_id, "capture.kernel_packets");
+        ret = sqlite3_exec(db, request, callback_counters_list, packetList, &zErrMsg);
         if (ret != SQLITE_OK) {
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
-        printf("run: %d | start: %s | uptime: %d seconds | %d counters.\n",
-               r->id, r->startTime, r->uptime, number);
+        
+        /* get the list of ALL capture.kernel_drops counters */
+        dropList = counterListCreate();
+        snprintf(request, 256, SQL_STATS_LIST_COUNTERS, run_id, "capture.kernel_drops");
+        ret = sqlite3_exec(db, request, callback_counters_list, dropList, &zErrMsg);
+        if (ret != SQLITE_OK) {
+            fprintf(stderr, "SQL error: %s\n", zErrMsg);
+            sqlite3_free(zErrMsg);
+        }
+
+        /* packetList traversal to get per thread stats */
+        long long int packetsSum = 0;
+        for (i = 0, c = counterListGetFirst(packetList); i < packetList->count; i++, c = counterListGetNext(c)) {
+            debug_print("%d / %d : %lld -- ", i, packetList->count, packetsSum);
+            packetsSum += c->value;
+            /* traverse threadsList to increase its packet number */
+            t = threadListGetFirst(threadsList);
+            while (strcmp(c->thread_name, t->name)) {
+                t = threadListGetNext(t);
+            }
+            t->packets += c->value;
+            debug_print("%s %lld\n", t->name, t->packets);
+        }
+        debug_print("uptime=%d\n", r->uptime);
+        debug_print("%d - %lld\n", packetList->count, packetsSum);
+
+        /* dropsList traversal to get per thread stats */
+        long long int dropsSum = 0;
+        for (i = 0, c = counterListGetFirst(dropList); i < dropList->count; i++, c = counterListGetNext(c)) {
+            dropsSum += c->value;
+            /* traverse threadsList to increase its drop number */
+            t = threadListGetFirst(threadsList);
+            while (strcmp(c->thread_name, t->name)) {
+                t = threadListGetNext(t);
+            }
+            t->drops += c->value;
+        }
+        debug_print("%d - %lld\n", dropList->count, dropsSum);
+
+        /* Calculate the ratio drops/packets */
+        double ratio = (double)dropsSum/(double)packetsSum;
+        printf("\n-------------------------------------------------------------\n");
+        printf("run %d\ndrops/packets ratio= %f\n\n", run_id, ratio);
+        printf("-------------------------------------------------------------\n");
+        /* Print statistics per thread */
+        printf("%-32s|  packets/s   |  drops/s\n","Thread name");
+        printf("-------------------------------------------------------------\n");
+        for (i = 0, t = threadListGetFirst(threadsList); i < threadsList->count; i++, t = threadListGetNext(t)) {
+            printf("%-32s| %12.2f | %12.2f\n",t->name,
+                   (double)t->packets/(double)r->uptime,
+                   (double)t->drops/(double)r->uptime);
+        }
+        
+        /* Free memory */
+        threadListDelete(threadsList);
+        counterListDelete(packetList);
+        counterListDelete(dropList);
     }
-#endif
+    runListDelete(runsList);
     /* close the db file */
     sqlite3_close(db);
     return 0;
