@@ -7,11 +7,10 @@
 #include <sys/stat.h>
 #include <assert.h>
 
+//#define DEBUG
+
+#include "chi_debug.h"
 #include "thread.h"
-
-
-/* TRACE MACRO */
-#define TRACE(...)    //printf
 
 
 struct thread *threadCreate(char *name)
@@ -27,19 +26,17 @@ struct thread *threadCreate(char *name)
     t->name = strdup(name);
     t->packets = 0;
     t->drops = 0;
-
-    TRACE("%s - id=%d date=%s uptime=%d\n", __FUNCTION__, t->name);
-    //threadDisplay(t);
+    debug_print("%s - name=%s\n", __FUNCTION__, t->name);
     return t;
 }
 
-int threadDelete(struct thread *t)
+void threadDelete(struct thread *t)
 {
     assert(t->next == NULL);
-    TRACE("%s - @=%16lx\n", __FUNCTION__, (long int)t);
+    debug_print("%s - @=%16lx\n", __FUNCTION__, (long int)t);
     free(t->name);
     free(t);
-    return 0;
+    return;
 }
 
 void threadDisplay(struct thread * t)
@@ -59,39 +56,33 @@ struct threadList * threadListCreate(void)
     return l;
 }
 
-int threadListDelete(struct threadList *l)
+void threadListDelete(struct threadList *l)
 {
     while (l->count != 0) {
-        struct thread * t = threadListPopFirst(l);
+        struct thread * t = threadListExtract(l);
         threadDelete(t);
     }
     free(l);
-    return 0;
 }
 
-int threadListAppend(struct threadList *l, struct thread *t)
+void threadListAppend(struct threadList *l, struct thread *t)
 {
-    int ret = -1;
-
     assert(l != NULL);
     assert(t != NULL);
-
-    if (t->next == NULL) {
-        l->count++;
-        if (l->tail == NULL) {
-            l->tail = t;
-            l->head = t;
-        } else {
-            l->tail->next = t;
-            l->tail = t;
-        }
-        ret = 0;
+    assert(t->next == NULL);
+        
+    l->count++;
+    if (l->tail == NULL) {
+        l->tail = t;
+        l->head = t;
+    } else {
+        l->tail->next = t;
+        l->tail = t;
     }
-    TRACE("%s: returned %d\n", __FUNCTION__, ret);
-    return ret;
+    debug_print("%s - @=%16lx\n", __FUNCTION__, (long int)t);
 }
 
-struct thread *threadListPopFirst(struct threadList * l)
+struct thread *threadListExtract(struct threadList * l)
 {
     struct thread *t = NULL;
 
@@ -105,7 +96,33 @@ struct thread *threadListPopFirst(struct threadList * l)
         }
     }
     return t;
-}
+} /* threadListPopFirst() */
+
+/*
+ * 
+ * name: threadListTravel
+ * @param l is the list to be traversed.
+ * @param callback is function that will be called for each element in the list.
+ *        The callback return value is either '1' if the traversal of the list
+ *        must be interrupted or '0' if we must continue. 
+ * @param param is the first parameter passed to the callback.
+ * @return '0' if OK or '1' if the traversal has been interrupted.
+ * 
+ */
+int threadListTravel(struct threadList * l,
+                     int (*callback)(void*, struct thread*),
+                     void * param)
+{
+    int ret;
+    struct thread * t;
+    
+    t = threadListGetFirst(l);
+    do {
+        ret = callback(param, t);
+        t = threadListGetNext(t);
+    } while (t != NULL);
+    return ret;
+} /* threadListTravel */
 
 struct thread *threadListGetFirst(struct threadList * l)
 {
@@ -131,6 +148,12 @@ void threadListDisplay(struct threadList * l)
     }
     printf("%d thread(s) in the list.\n", l->count);
 }
+
+/*
+ * 
+ * Standalone unitary tests
+ * 
+ */
 
 #ifdef TEST_UNIT
 int main()

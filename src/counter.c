@@ -7,14 +7,29 @@
 #include <sys/stat.h>
 #include <assert.h>
 
+#include "chi_debug.h"
 #include "counter.h"
 
 
-/* TRACE MACRO */
-#define TRACE(...)    //printf
-
-
-struct counter * counterCreate(char *cname, char *tname, long int value,
+/*
+ * 
+ * name: counterCreate
+ *     Allocates and initializes a counter.
+ * @param cname
+ *     counter's name
+ * @param tname
+ *     thread's name
+ * @param value
+ *     counter's value
+ * @param run_id
+ *     run identifier
+ * @param uptime
+ *     uptime for this counter's value
+ * @return
+ *     the pointer to the created counter
+ * 
+ */
+struct counter * counterCreate(char *cname, char *tname, long long int value,
                                unsigned int run_id, unsigned int uptime)
 {
     struct counter *c;
@@ -30,24 +45,33 @@ struct counter * counterCreate(char *cname, char *tname, long int value,
     c->value = value;
     c->run_id = run_id;
     c->uptime = uptime;
-    TRACE("%s - cname=%s tname=%s value=%ld\n", __FUNCTION__, c->name, c->thread_name, c->value);
+    debug_print("%s - cname=%s tname=%s value=%lld\n", __FUNCTION__, c->name, c->thread_name, c->value);
     return c;
 }
 
-int counterDelete(struct counter *c)
+/*
+ * 
+ * name: counterDelete
+ *    Deletes a counter. Free memory allocated to it.
+ * @param c
+ *    pointer to the counter to be deleted
+ * @return
+ *    nothing
+ */
+void counterDelete(struct counter *c)
 {
     assert(c->next == NULL);
-    TRACE("%s - @=%16lx\n", __FUNCTION__, (long int)c);
+    debug_print("%s - @=0x%llx\n", __FUNCTION__, (long long int)c);
     free(c->name);
     free(c->thread_name);
     free(c);
-    return 0;
+    return;
 }
 
 void counterDisplay(struct counter * c)
 {
     assert(c);
-    //printf("name=%s thread=%s value=%ld run=%d up=%d\n", c->name, c->thread_name, c->value, c->run_id, c->up);
+    printf("name=%s thread=%s value=%lld run=%d up=%d\n", c->name, c->thread_name, c->value, c->run_id, c->uptime);
 }
 
 struct counterList * counterListCreate(void)
@@ -61,39 +85,33 @@ struct counterList * counterListCreate(void)
     return l;
 }
 
-int counterListDelete(struct counterList *l)
+void counterListDelete(struct counterList *l)
 {
     while (l->count != 0) {
-        struct counter * c = counterListPopFirst(l);
+        struct counter * c = counterListExtract(l);
         counterDelete(c);
     }
     free(l);
-    return 0;
 }
 
-int counterListAppend(struct counterList *l, struct counter *f)
+void counterListAppend(struct counterList *l, struct counter *f)
 {
-    int ret = -1;
-
     assert(l != NULL);
     assert(f != NULL);
-
-    if (f->next == NULL) {
-        l->count++;
-        if (l->tail == NULL) {
-            l->tail = f;
-            l->head = f;
-        } else {
-            l->tail->next = f;
-            l->tail = f;
-        }
-        ret = 0;
+    assert(f->next == NULL);
+    
+    l->count++;
+    if (l->tail == NULL) {
+        l->tail = f;
+        l->head = f;
+    } else {
+        l->tail->next = f;
+        l->tail = f;
     }
-    TRACE("%s: returned %d\n", __FUNCTION__, ret);
-    return ret;
+    debug_print("%s - @=%16lx\n", __FUNCTION__, (long int)f);
 }
 
-struct counter * counterListPopFirst(struct counterList * l)
+struct counter * counterListExtract(struct counterList * l)
 {
     struct counter *c = NULL;
 
@@ -132,8 +150,13 @@ void counterListDisplay(struct counterList * l)
         current = current->next;
     }
     printf("%d counter(s) in the list.\n", l->count);
-    //assert(current == l->tail);
 }
+
+/*
+ * 
+ * Standalone unitary tests
+ * 
+ */
 
 #ifdef TEST_UNIT
 int main()

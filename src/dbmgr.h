@@ -6,18 +6,10 @@
 #   include "run.h"
 
 
-    int       dbCreate(char * filename, struct counterList * clist, struct runList * rlist);
-
-    int       dbRead(char * filename);
-
-    int       dbStatPrint(char * filename);
-
-    sqlite3 * dbOpen(char * filename);
-    
-    void      dbRunInsert(sqlite3 * db, int run, char * startDate, int uptime);
-
-    void      dbRunUpdate(sqlite3 * db, int run, int uptime);
-
-    void      dbClose(sqlite3 * db);
+    int dbCreate(char * filename);           /* name of the DB file */ 
+    int dbFill(char * filename,              /* name of the DB file */
+               struct counterList * clist,   /* list of counters to insert in DB */
+               struct runList * rlist);      /* list of runs to insert in DB */
+    int dbStatPrint(char * filename);        /* name of the DB file */
 
 #endif

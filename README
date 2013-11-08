@@ -1,2 +1,116 @@
-This software uses Suricata stats.log file to build a SQLite database to store counters for each run.
+This software uses Suricata stats.log file to build a SQLite database to store 
+counters for each run.
+
 Type "suristats -h" for help and usage.
+
+For the -d option, all the counters stored in the single link list are INSERTed 
+in the SQLITE database in a single BEGIN/COMMIT transaction. It makes it happen 
+faster but with the C-2013-stats.log file used, we have 276260 counters to insert. 
+We can see in the valgrind log below that it reserves a lot of memory (more than 
+2GB). To be able to deal with bigger files or to execute this program on computer 
+with less memory, we should limit the number of INSERT in a BEGIN/COMMIT 
+transaction to 20k or 50k.
+
+Valgrind logs:
+--------------------------------------------------------------------------------
+$ valgrind ./bin/suristats -d db.sqlite C-2013-stats.log 
+==22146== Memcheck, a memory error detector
+==22146== Copyright (C) 2002-2011, and GNU GPL'd, by Julian Seward et al.
+==22146== Using Valgrind-3.7.0 and LibVEX; rerun with -h for copyright info
+==22146== Command: ./bin/suristats -d db.sqlite C-2013-stats.log
+==22146== 
+2013-07-02 15:29:17
+2013-07-02 15:33:30
+==22146== 
+==22146== HEAP SUMMARY:
+==22146==     in use at exit: 0 bytes in 0 blocks
+==22146==   total heap usage: 8,027,683 allocs, 8,027,683 frees, 2,017,862,691 bytes allocated
+==22146== 
+==22146== All heap blocks were freed -- no leaks are possible
+==22146== 
+==22146== For counts of detected and suppressed errors, rerun with: -v
+==22146== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 6 from 6)
+--------------------------------------------------------------------------------
+$ valgrind ./bin/suristats -v db.sqlite
+==22157== Memcheck, a memory error detector
+==22157== Copyright (C) 2002-2011, and GNU GPL'd, by Julian Seward et al.
+==22157== Using Valgrind-3.7.0 and LibVEX; rerun with -h for copyright info
+==22157== Command: ./bin/suristats -v db.sqlite
+==22157== 
+Number of run(s): 2
+0 | start: 2013-07-02 15:28:49 | uptime: 237 seconds | 8724 counters.
+1 | start: 2013-07-02 15:33:02 | uptime: 7001 seconds | 267536 counters.
+==22157== 
+==22157== HEAP SUMMARY:
+==22157==     in use at exit: 0 bytes in 0 blocks
+==22157==   total heap usage: 2,303 allocs, 2,303 frees, 2,721,674 bytes allocated
+==22157== 
+==22157== All heap blocks were freed -- no leaks are possible
+==22157== 
+==22157== For counts of detected and suppressed errors, rerun with: -v
+==22157== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 6 from 6)
+--------------------------------------------------------------------------------
+$ valgrind ./bin/suristats -s db.sqlite
+==22160== Memcheck, a memory error detector
+==22160== Copyright (C) 2002-2011, and GNU GPL'd, by Julian Seward et al.
+==22160== Using Valgrind-3.7.0 and LibVEX; rerun with -h for copyright info
+==22160== Command: ./bin/suristats -s db.sqlite
+==22160== 
+Number of run(s): 2
+
+-------------------------------------------------------------
+run 0
+drops/packets ratio= 0.079241
+
+-------------------------------------------------------------
+Thread name                     |  packets/s   |  drops/s
+-------------------------------------------------------------
+AFPacketeth31                   |    614266.14 |     90300.82
+AFPacketeth32                   |    655207.11 |     83023.06
+AFPacketeth33                   |    598453.93 |     36642.15
+AFPacketeth34                   |    620662.09 |     52317.43
+AFPacketeth35                   |    593047.71 |     45245.48
+AFPacketeth36                   |    586297.42 |     28425.62
+AFPacketeth37                   |    612735.84 |     55753.01
+AFPacketeth38                   |    599211.24 |     62469.18
+AFPacketeth39                   |    635945.23 |     72623.37
+AFPacketeth310                  |    605772.12 |     88019.60
+AFPacketeth311                  |    601256.16 |     33639.03
+AFPacketeth312                  |    577934.33 |     35380.26
+AFPacketeth313                  |    572401.21 |      9780.46
+AFPacketeth314                  |    576780.59 |     15391.83
+AFPacketeth315                  |    566711.27 |     31223.87
+AFPacketeth316                  |    592471.22 |     21207.29
+
+-------------------------------------------------------------
+run 1
+drops/packets ratio= 0.040287
+
+-------------------------------------------------------------
+Thread name                     |  packets/s   |  drops/s
+-------------------------------------------------------------
+AFPacketeth31                   |  17274348.27 |   2372720.62
+AFPacketeth32                   |  18248707.32 |    259932.62
+AFPacketeth33                   |  17880212.37 |    192225.54
+AFPacketeth34                   |  18155554.52 |    462823.48
+AFPacketeth35                   |  17645595.34 |   2711935.46
+AFPacketeth36                   |  17829102.80 |   1371544.50
+AFPacketeth37                   |  18028374.39 |    208097.75
+AFPacketeth38                   |  17563615.20 |    330787.72
+AFPacketeth39                   |  18519565.90 |    814116.19
+AFPacketeth310                  |  17627337.59 |    239074.20
+AFPacketeth311                  |  17504926.06 |    226044.78
+AFPacketeth312                  |  17121883.27 |    148878.96
+AFPacketeth313                  |  17279520.14 |    192951.86
+AFPacketeth314                  |  17305552.00 |   1402807.12
+AFPacketeth315                  |  17852257.03 |    355415.41
+AFPacketeth316                  |  17548646.10 |    127344.53
+==22160== 
+==22160== HEAP SUMMARY:
+==22160==     in use at exit: 0 bytes in 0 blocks
+==22160==   total heap usage: 39,189 allocs, 39,189 frees, 3,720,560 bytes allocated
+==22160== 
+==22160== All heap blocks were freed -- no leaks are possible
+==22160== 
+==22160== For counts of detected and suppressed errors, rerun with: -v
+==22160== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 6 from 6)

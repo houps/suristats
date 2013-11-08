@@ -18,9 +18,9 @@ $(OBJECTS): $(OBJDIR)/%.o : $(SRCDIR)/%.c
 	$(CC) -o $@ -c $< $(CFLAGS)
 
 
-main.o: $(INC)/dbmgr.h $(INC)/counter.h $(INC)/run.h $(INC)/thread.h
+obj/main.o: $(SRCDIR)/dbmgr.h $(SRCDIR)/counter.h $(SRCDIR)/run.h $(SRCDIR)/thread.h
 
-dbmgr.o: $(INC)/counter.h $(INC)/run.h $(INC)/thread.h
+obj/dbmgr.o: $(SRCDIR)/counter.h $(SRCDIR)/run.h $(SRCDIR)/thread.h
 
 .PHONY: clean mrproper
 

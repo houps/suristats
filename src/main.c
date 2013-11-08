@@ -8,14 +8,30 @@
 #include <assert.h>
 #include <limits.h> /* INT_MAX */
 
+//#define DEBUG
+
+#include "chi_debug.h"
 #include "counter.h"
 #include "run.h"
 #include "dbmgr.h"
 
-/* TRACE MACRO */
-#define TRACE() //printf()
 
-int ParseLogFile(char * filename, struct counterList * clist, struct runList * rlist)
+/*
+ * 
+ * name: ParseLogFile
+ *        This function parses a SURICATA stats log file to fill a list with runs
+ *        and another list with conters.
+ * @param filename
+ *        SURICATA stats log filename
+ * @param clist
+ *        pointer to counters'list
+ * @param rlist
+ *        pointer to runs'list
+ * @return
+ *        nothing
+ */
+
+void ParseLogFile(char * filename, struct counterList * clist, struct runList * rlist)
 {
     FILE * fd;
     int i, ret;
@@ -35,9 +51,9 @@ int ParseLogFile(char * filename, struct counterList * clist, struct runList * r
 
         char counter_name[80];
         char TM_name[32]; 
-        long int  counter_value;
+        long long int  counter_value;
         
-        ret = sscanf(line, "%31s | %31s | %ld\n", counter_name, TM_name, &counter_value);
+        ret = sscanf(line, "%31s | %31s | %lld\n", counter_name, TM_name, &counter_value);
         if (ret == 3) {
             struct counter * cnt = counterCreate(counter_name, TM_name, counter_value, run_id, uptime);
             counterListAppend(clist, cnt);
@@ -77,9 +93,10 @@ int ParseLogFile(char * filename, struct counterList * clist, struct runList * r
             }
         }
     }
+    printf("Found %d counter(s) in %d run(s)\n", clist->count, rlist->count);
     /* close file */
     fclose(fd);
-    return 0;
+    return;
 }
 
 int main(int argc, char**argv)
@@ -89,19 +106,18 @@ int main(int argc, char**argv)
     char *dbFilename;
     char *logFilename;
 
-    while ((opt = getopt(argc, argv, "hd:c:D:v:s:m:")) != -1) {
+    while ((opt = getopt(argc, argv, "hc:f:d:s:")) != -1) {
         switch (opt) {
             case 'h':
                 printf("Usage:\n");
                 printf("-h\n\tto display this help.\n");
-                printf("-d <dbfile> <statfile>\n\tto fill dbfile with the content statfile, a SURICATA stats log file.\n");
                 printf("-c <dbfile>\n\tto create an empty dbfile.\n");
-                printf("-D <dbfile>\n\tto delete the file dbfile.\n");
-                printf("-v <dbfile>\n\tto get the information about data in database dbfile.\n");
+                printf("-f <dbfile> <statfile>\n\tto fill dbfile with the content statfile, a SURICATA stats log file.\n");
+                printf("-d <dbfile>\n\tto delete the file dbfile.\n");
                 printf("-s <dbfile>\n\tto get statistics about counters in database dbfile.\n");
-                printf("-m <dbfile> <statfile>\n\tto monitor the modifications of <statfile>, a SURICATA stats log file,\n\tand to populate the database <dbfile>.\n");
+                //printf("-m <dbfile> <statfile>\n\tto monitor the modifications of <statfile>, a SURICATA stats log file,\n\tand to populate the database <dbfile>.\n");
                 break;
-            case 'd':
+            case 'f':
                 /* optarg contains the database filename */
                 dbFilename = strdup(optarg);
                 if (argc == 4) {
@@ -114,58 +130,34 @@ int main(int argc, char**argv)
                     rlist = runListCreate();
                     /* parse log file to populate lists */
                     ParseLogFile(logFilename, clist, rlist);
-                    /* DB creation with lists' content */
-                    dbCreate(dbFilename, clist, rlist);
+                    /* fill DB with lists'content */
+                    dbFill(dbFilename, clist, rlist);
                     /* delete list */
                     counterListDelete(clist);
                     runListDelete(rlist);
                     free(dbFilename);
                     free(logFilename);
                 }
+                else {
+                    printf("Argument missing, type 'suristats -h' for help.\n");
+                }
                 break;
             case 'c':
                 /* optarg contains the database filename */
-                dbFilename = strdup(optarg);
-                /* exist? */
                 /* create empty db */
-                dbCreate(dbFilename, NULL, NULL);
+                dbCreate(optarg);
                 break;
-            case 'D':
+            case 'd':
                 /* optarg contains the database filename */
-                dbFilename = strdup(optarg);
-                /* exist? */
-                if(remove(dbFilename) == 0)
-                    printf("File %s deleted.\n", dbFilename);
+                if(remove(optarg) == 0)
+                    printf("File %s deleted.\n", optarg);
                 else
-                    fprintf(stderr, "Error deleting the file %s.\n", dbFilename);
-                break;
-            case 'v':
-                /* optarg contains the database filename */
-                {
-                    dbFilename = strdup(optarg);
-                    /* DB reading */
-                    dbRead(dbFilename);
-                    free(dbFilename);
-                }
+                    fprintf(stderr, "Error deleting the file %s.\n", optarg);
                 break;
             case 's':
                 /* optarg contains the database filename */
-                {
-                    dbFilename = strdup(optarg);
-                    /* DB processing for statistics extraction */
-                    dbStatPrint(dbFilename);
-                    free(dbFilename);
-                }
-                break;
-            case 'm':
-                /* optarg contains the database filename */
-                dbFilename = strdup(optarg);
-                if (argc == 4) {
-                    logFilename = strdup(argv[3]);
-                    /* ... */
-                    free(dbFilename);
-                    free(logFilename);
-                }
+                /* DB processing for statistics extraction */
+                dbStatPrint(optarg);
                 break;
             default:
                 break;

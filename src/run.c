@@ -7,11 +7,10 @@
 #include <sys/stat.h>
 #include <assert.h>
 
+//#define DEBUG
+
+#include "chi_debug.h"
 #include "run.h"
-
-
-/* TRACE MACRO */
-#define TRACE(...)    //printf
 
 
 struct run *runCreate(int id, char *start, unsigned int uptime)
@@ -26,9 +25,9 @@ struct run *runCreate(int id, char *start, unsigned int uptime)
     r->next = NULL;
     r->id = id;
     r->startTime = strdup(start);
+    r->firstUptime = uptime;
     r->uptime = uptime;
-    TRACE("%s - id=%d date=%s uptime=%d\n", __FUNCTION__, r->id, r->start, r->uptime);
-    //runDisplay(r);
+    debug_print("%s - id=%d date=%s uptime=%d\n", __FUNCTION__, r->id, r->startTime, r->uptime);
     return r;
 }
 
@@ -36,16 +35,16 @@ void runUpdate(struct run *r, unsigned int uptime)
 {
     assert(r != NULL);
     r->uptime = uptime;
-    runDisplay(r);
+    debug_print("id=%d start=%s uptime=%d\n", r->id, r->startTime, r->uptime);
 }
 
-int runDelete(struct run *r)
+void runDelete(struct run *r)
 {
     assert(r->next == NULL);
-    TRACE("%s - @=%16lx\n", __FUNCTION__, (long int)r);
+    debug_print("%s - @=%16lx\n", __FUNCTION__, (long int)r);
     free(r->startTime);
     free(r);
-    return 0;
+    return;
 }
 
 void runDisplay(struct run * r)
@@ -65,39 +64,33 @@ struct runList * runListCreate(void)
     return l;
 }
 
-int runListDelete(struct runList *l)
+void runListDelete(struct runList *l)
 {
     while (l->count != 0) {
-        struct run * r = runListPopFirst(l);
+        struct run * r = runListExtract(l);
         runDelete(r);
     }
     free(l);
-    return 0;
 }
 
-int runListAppend(struct runList *l, struct run *r)
+void runListAppend(struct runList *l, struct run *r)
 {
-    int ret = -1;
-
     assert(l != NULL);
     assert(r != NULL);
-
-    if (r->next == NULL) {
-        l->count++;
-        if (l->tail == NULL) {
-            l->tail = r;
-            l->head = r;
-        } else {
-            l->tail->next = r;
-            l->tail = r;
-        }
-        ret = 0;
+    assert(r->next == NULL);
+        
+    l->count++;
+    if (l->tail == NULL) {
+        l->tail = r;
+        l->head = r;
+    } else {
+        l->tail->next = r;
+        l->tail = r;
     }
-    TRACE("%s: returned %d\n", __FUNCTION__, ret);
-    return ret;
+    debug_print("%s - @=%16lx\n", __FUNCTION__, (long int)r);
 }
 
-struct run *runListPopFirst(struct runList * l)
+struct run *runListExtract(struct runList * l)
 {
     struct run *r = NULL;
 
@@ -137,6 +130,12 @@ void runListDisplay(struct runList * l)
     }
     printf("%d run(s) in the list.\n", l->count);
 }
+
+/*
+ * 
+ * Standalone unitary tests
+ * 
+ */
 
 #ifdef TEST_UNIT
 int main()

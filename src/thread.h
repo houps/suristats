@@ -11,31 +11,26 @@
     };
 
     struct thread *threadCreate(char *name);
-
-    int threadDelete(struct thread *t);
-
+    void threadDelete(struct thread *t);
     void threadDisplay(struct thread *t);
 
     /* threadList API */
 
     struct threadList {
-        struct thread *head;
-        struct thread *tail;
-        int            count;
+        struct thread *head;   /* pointer to the first element in the list */
+        struct thread *tail;   /* pointer to the last element in the list */
+        int            count;  /* number of elements in the list */
     };
 
     struct threadList *threadListCreate(void);
-
-    int threadListDelete(struct threadList *l);
-
-    int threadListAppend(struct threadList *l, struct thread *t);
-
-    struct thread *threadListPopFirst(struct threadList *l);
-    
+    void threadListDelete(struct threadList *l);
+    void threadListAppend(struct threadList *l, struct thread *t);
+    struct thread *threadListExtract(struct threadList *l);
     struct thread *threadListGetFirst(struct threadList *l);
-
     struct thread *threadListGetNext(struct thread *t);
-    
     void threadListDisplay(struct threadList *l);
+    int threadListTravel(struct threadList *l,
+                         int (*callback)(void *param, struct thread * t),
+                         void *param);
 
 #endif

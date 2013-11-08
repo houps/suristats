@@ -5,59 +5,77 @@
 #include <sqlite3.h>
 #include <assert.h>
 
-#include "dbmgr.h"
+//#define DEBUG
+
+#include "chi_debug.h"
+#include "run.h"
 #include "counter.h"
 #include "thread.h"
+#include "dbmgr.h"
 
-#define DEBUG        0
 
-/*****************/
-/* Useful Macros */
-/*****************/
-
-#define UNUSED_PARAMETER(_param_)   (void)(_param_)
-
-#ifdef DEBUG
-#   define DEBUG_TEST 1
-#else
-#   define DEBUG_TEST 0
-#endif
-
-#define debug_print(fmt, ...) \
-            do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
-
-/****************/
-/* SQL requests */
-/****************/
+/****************
+ * SQL requests *
+ ****************/
 
 #define SQL_CREATE_TABLE_COUNTERS  "CREATE TABLE T_COUNTER (C_NAME CHAR(32), C_THREAD VARCHAR(32), C_VALUE INTEGER, C_RUN INTEGER, C_UPTIME INTEGER)"
 
 #define SQL_CREATE_TABLE_RUNS      "CREATE TABLE T_RUN (R_ID INTEGER, R_STARTDATE DATETIME, R_ENDDATE DATETIME, R_DURATION INTEGER, R_COMMENT VARCHAR(32))"
 
-#define SQL_INSERT_COUNTER "INSERT INTO T_COUNTER VALUES ('%s', '%s', %ld, %d, %d)"
+#define SQL_INSERT_COUNTER         "INSERT INTO T_COUNTER VALUES ('%s', '%s', %lld, %d, %d)"
 
-#define SQL_INSERT_RUN     "INSERT INTO T_RUN VALUES ('%d', datetime('%s', '-%d seconds'), datetime('%s'), %d, '%s')"
+#define SQL_INSERT_RUN             "INSERT INTO T_RUN VALUES ('%d', datetime('%s', '-%d seconds'), datetime('%s', '+%d seconds'), %d, '%s')"
 
-#define SQL_UPDATE_RUN  "UPDATE T_RUN SET R_ENDDATE = datetime(R_ENDDATE, '+%d seconds'), R_UPTIME = %d WHERE R_ID = %d"
+#define SQL_STATS_LIST_COUNTERS    "SELECT * FROM T_COUNTER WHERE C_RUN = %d AND C_NAME = '%s'"
 
-#define SQL_STATS_LIST_COUNTERS  "SELECT * FROM T_COUNTER WHERE C_RUN = %d AND C_NAME = '%s'"
+#define SQL_STATS_LIST_THREADS     "SELECT DISTINCT C_THREAD FROM T_COUNTER WHERE C_RUN = '%d' AND C_NAME='capture.kernel_packets'"
 
-#define SQL_STATS_LIST_THREADS   "SELECT DISTINCT C_THREAD FROM T_COUNTER WHERE C_RUN = '%d' AND C_NAME='capture.kernel_packets'"
-
-
-static int callback(void *NotUsed, int argc, char **argv, char **azColName) {
+/*
+ * 
+ * name: callback
+ *    Generic function called by sqlite3_exec for each result of the SQL request in progress.
+ * @param param
+ *    User's parameter given to sqlite3_exec function.
+ * @param argc
+ *    number of column in the result of the SQL request
+ * @param argv
+ *    array which contains the column's value
+ * @param azColName
+ *    array which contains the column's name
+ * @return
+ *    '0' to continue processing of the request, '1' to stop processing
+ * 
+ */
+static int callback(void *param, int argc, char **argv, char **azColName) {
     int i;
     
-    UNUSED_PARAMETER(NotUsed);
+    UNUSED_PARAMETER(param);
     for (i = 0; i < argc; i++){
         printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
     }
     printf("\n");
     return 0;
-}
+} /* callback */
 
-static int callback_runs(void *list, int argc, char **argv, char **azColName) {
-    struct runList * rlist = (struct runList *)list;
+/*
+ * 
+ * name: callback_runs
+ *    Function called by sqlite3_exec for each result of the SQL request in progress.
+ *    Fill the runs' list.
+ * @param param
+ *    User's parameter given to sqlite3_exec function.
+ * @param argc
+ *    number of column in the result of the SQL request
+ * @param argv
+ *    array which contains the column's value
+ * @param azColName
+ *    array which contains the column's name
+ * @return
+ *    '0' to continue processing of the request, '1' to stop processing
+ * 
+ */
+static int callback_runs(void *param, int argc, char **argv, char **azColName) {
+    struct runList * rlist = (struct runList *)param;
     struct run * run;
     
     UNUSED_PARAMETER(argc);
@@ -65,17 +83,25 @@ static int callback_runs(void *list, int argc, char **argv, char **azColName) {
     run = runCreate(atoi(argv[0]), argv[1], atoi(argv[3]));
     runListAppend(rlist, run);
     return 0;
-}
+} /* callback_runs */
 
-static int callback_getCount(void *param, int argc, char **argv, char **azColName) {
-    int * value_p = (int *)param;
-    
-    UNUSED_PARAMETER(argc);
-    UNUSED_PARAMETER(azColName);
-    *value_p = atoi(argv[0]);
-    return 0;
-}
-
+/*
+ * 
+ * name: callback_counters_list
+ *    Function called by sqlite3_exec for each result of the SQL request in progress.
+ *    Fill the counters' list.
+ * @param param
+ *    User's parameter given to sqlite3_exec function.
+ * @param argc
+ *    number of column in the result of the SQL request
+ * @param argv
+ *    array which contains the column's value
+ * @param azColName
+ *    array which contains the column's name
+ * @return
+ *    '0' to continue processing of the request, '1' to stop processing
+ * 
+ */
 static int callback_counters_list(void *param, int argc, char **argv, char **azColName) {
     struct counterList * clist = (struct counterList *)param;
 	struct counter * c;
@@ -85,8 +111,25 @@ static int callback_counters_list(void *param, int argc, char **argv, char **azC
     c = counterCreate(argv[0], argv[1], atol(argv[2]), atoi(argv[3]), atoi(argv[4]));
     counterListAppend(clist, c);
     return 0;
-}
+} /* callback_counters_list */
 
+/*
+ * 
+ * name: callback_threads_list
+ *    Function called by sqlite3_exec for each result of the SQL request in progress.
+ *    Fill the threads' list.
+ * @param param
+ *    User's parameter given to sqlite3_exec function.
+ * @param argc
+ *    number of column in the result of the SQL request
+ * @param argv
+ *    array which contains the column's value
+ * @param azColName
+ *    array which contains the column's name
+ * @return
+ *    '0' to continue processing of the request, '1' to stop processing
+ * 
+ */
 static int callback_threads_list(void *param, int argc, char **argv, char **azColName) {
     struct threadList * tlist = (struct threadList *)param;
 	struct thread * t;
@@ -96,9 +139,18 @@ static int callback_threads_list(void *param, int argc, char **argv, char **azCo
     t = threadCreate(argv[0]);
     threadListAppend(tlist, t);
     return 0;
-}
+} /* callback_threads_list */
 
-int dbCreate(char * filename, struct counterList * clist, struct runList * rlist)
+/*
+ * 
+ * name: dbCreate
+ * @param filename
+ *     filename of the database to be filled.
+ * @return
+ *     '0' if success and '1' elsewhere
+ * 
+ */
+int dbCreate(char * filename)
 {
     sqlite3 *db;
     int ret;
@@ -128,6 +180,38 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
+    /* close the db file */
+    sqlite3_close(db);
+    printf("File %s created.\n", filename);
+    return 0;
+} /* dbCreate */
+
+/*
+ * 
+ * name: dbFill
+ * @param filename
+ *     filename of the database to be filled.
+ * @param rlist
+ *     pointer to the runs' list.
+ * @param clist
+ *     pointer to the counters' list.
+ * @return
+ *     '0' if success and '1' elsewhere
+ * 
+ */
+int dbFill(char * filename, struct counterList * clist, struct runList * rlist)
+{
+    sqlite3 *db;
+    int ret;
+    char *zErrMsg = 0;
+
+    /* create it */
+    ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READWRITE, NULL);
+    if (ret) {
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return(1);
+    }
     /* fill the db if counters' list provided */
     if (clist != NULL) {
         int i, max;
@@ -143,7 +227,7 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
             char request[256];
             struct counter * c;
 
-            c = counterListPopFirst(clist);
+            c = counterListExtract(clist);
             snprintf(request, 256, SQL_INSERT_COUNTER, c->name, c->thread_name, c->value, c->run_id, c->uptime);
             counterDelete(c);
             ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
@@ -167,8 +251,9 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
             char request[256];
             struct run * r;
 
-            r = runListPopFirst(rlist);
-            snprintf(request, 256, SQL_INSERT_RUN, r->id, r->startTime, r->uptime, r->startTime, r->uptime, "");
+            r = runListExtract(rlist);
+            printf("Run %d -- First dump logged at %s -- duration=%d seconds.\n", r->id, r->startTime, r->uptime);
+            snprintf(request, 256, SQL_INSERT_RUN, r->id, r->startTime, r->firstUptime, r->startTime, r->uptime - r->firstUptime, r->uptime, "");
             runDelete(r);
             ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
             if (ret != SQLITE_OK) {
@@ -179,9 +264,19 @@ int dbCreate(char * filename, struct counterList * clist, struct runList * rlist
     }
     /* close the db file */
     sqlite3_close(db);
+    printf("File %s filled.\n", filename);
     return 0;
-}
+} /* dbFill */
 
+/*
+ * 
+ * name: dbGetRunList
+ *        This function retrieves in the DB the runs' list.
+ * @param db is the pointer to the SQLite database
+ * @return
+ *        the runs' list
+ * 
+ */
 struct runList * dbGetRunList(sqlite3 *db)
 {
     char *zErrMsg = 0;
@@ -197,55 +292,17 @@ struct runList * dbGetRunList(sqlite3 *db)
         sqlite3_free(zErrMsg);
     }
     return rlist;
-}
+} /* dbGetRunList */
 
-int dbRead(char * filename)
-{
-    sqlite3 *db;
-    int ret, run_id;
-    char *zErrMsg = 0;
-    struct runList * rlist;
-    struct run * r;
-    
-    /* open it */
-    ret = sqlite3_open_v2(filename, &db, SQLITE_OPEN_READONLY, NULL);
-    if (ret) {
-        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return(1);
-    }
-
-    /* extract runs info from the db */
-    rlist = runListCreate();
-    ret = sqlite3_exec(db, SQL_RUN_LIST, callback_runs, rlist, &zErrMsg);
-    if (ret != SQLITE_OK) {
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-    printf("Number of run(s): %d\n", rlist->count);
-
-    /* extract counters info from the db */
-    for (run_id = 0, r = runListGetFirst(rlist); run_id < rlist->count; run_id++, r = runListGetNext(r)) {
-        char request[256];
-        int number;
-        
-#define SQL_SELECT_COUNT_PER_RUN "SELECT COUNT(*) FROM T_COUNTER WHERE C_RUN = %d"
-
-        snprintf(request, 256, SQL_SELECT_COUNT_PER_RUN, run_id);
-        ret = sqlite3_exec(db, request, callback_getCount, &number, &zErrMsg);
-        if (ret != SQLITE_OK) {
-            fprintf(stderr, "SQL error: %s\n", zErrMsg);
-            sqlite3_free(zErrMsg);
-        }
-        printf("%d | start: %s | uptime: %d seconds | %d counters.\n",
-               r->id, r->startTime, r->uptime, number);
-    }
-    runListDelete(rlist);
-    /* close the db file */
-    sqlite3_close(db);
-    return 0;
-}
-
+/*
+ * 
+ * name: dbStatPrint
+ * @param filename
+ *    Name of the DB to be processed for statistics extraction.
+ * @return
+ *     '0' if success and '1' elsewhere
+ *
+ */
 int dbStatPrint(char * filename)
 {
     sqlite3 *db;
@@ -334,8 +391,8 @@ int dbStatPrint(char * filename)
 
         /* Calculate the ratio drops/packets */
         double ratio = (double)dropsSum/(double)packetsSum;
-        printf("\n-------------------------------------------------------------\n");
-        printf("run %d\ndrops/packets ratio= %f\n\n", run_id, ratio);
+        printf("\n=============================================================\n");
+        printf("run %d\ndrops/packets ratio= %f\n", run_id, ratio);
         printf("-------------------------------------------------------------\n");
         /* Print statistics per thread */
         printf("%-32s|  packets/s   |  drops/s\n","Thread name");
@@ -355,48 +412,15 @@ int dbStatPrint(char * filename)
     /* close the db file */
     sqlite3_close(db);
     return 0;
-	
-}
+} /* dbStatPrint */
 
-
-void dbRunInsert(sqlite3 *db, int run, char * startDate, int uptime)
-{
-    char request[256];
-    int ret;
-    char *zErrMsg = 0;
-    
-    snprintf(request, 256, SQL_INSERT_RUN, run, startDate, uptime, startDate, uptime, "");
-    ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
-    if(ret != SQLITE_OK){
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-}
-
-void dbRunUpdate(sqlite3 *db, int run, int uptime)
-{
-    char request[256];
-    int ret;
-    char *zErrMsg = 0;
-   
-    snprintf(request, 256, SQL_UPDATE_RUN, uptime, uptime, run);
-    ret = sqlite3_exec(db, request, callback, 0, &zErrMsg);
-    if(ret != SQLITE_OK){
-        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
-    }
-}
+/*
+ * 
+ * Standalone unitary tests
+ * 
+ */
 
 #ifdef TEST_UNIT
-static int callback(void *NotUsed, int argc, char **argv, char **azColName){
-    int i;
-    for(i=0; i<argc; i++){
-        printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
-    }
-    printf("\n");
-    return 0;
-}
-
 int main(int argc, char **argv){
     sqlite3 *db;
     char *zErrMsg = 0;
